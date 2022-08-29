@@ -2,16 +2,20 @@ from mylib.maze_utils3 import *
 
 class NaiveBayesDecoder(object):
     '''
-    version: 1.0
+    version: 1.1
     Author: YAO Shuyang
-    Date: August 29th, 2022
+    Date: August 30th, 2022
 
     A naive Bayesian decoder based on new priciples which aims at decoding neural signals.
     This decoder is written for improving the decoding correction rate for some neural recording in specific environment, like maze.
     This decoder can be run significantly faster than KordingLab's and has a reletively equivalent outcome.
+
+    Log:
+        1. Delete self._Generate_pext() and Modify self._Generate_TuningCurve(). I compared the results of self._Generate_pext() and 
+        self._Generate_TuningCurve() and find the former is really a redundancy.
     '''
 
-    def __init__(self, maze_type = 1, res=12, l = 0.01):
+    def __init__(self, maze_type = 1, res=12, l = 0.01, _version = 1.1):
         '''
         This decoder is compatible with open field and different maze type. Some parameters is set to modulate the decoding efficiency.
         ---------
@@ -27,6 +31,7 @@ class NaiveBayesDecoder(object):
         self.is_cease = False
         self.maze_type = maze_type
         self.l = l
+        self.version = 'NaiveBayesDecoder v '+str(_version)
         return
     
     # broadth first search (BFS) to calculating the distance of 2 maze bin
@@ -34,7 +39,7 @@ class NaiveBayesDecoder(object):
     # for NaiveBayesDecoder_ForMaze class to generate distance matrix D during model fitting.
     # Generate distance matrix D
     def _Generate_D_Matrix(self):
-        print("Generate D matrix")
+        print("    Generate D matrix")
         maze_type = self.maze_type
         nx = self.res
         with open('decoder_DMatrix.pkl', 'rb') as handle:
@@ -52,7 +57,7 @@ class NaiveBayesDecoder(object):
             D2 = D**2
         self.D2 = D2
         self.D = D
-        print("done.")
+        print("    D matrix successfully generated!")
         return D2
 
     # ----------------------------------- FITTING ------------------ Fitting ----------------------------------------------
@@ -74,31 +79,9 @@ class NaiveBayesDecoder(object):
         
     # ----------------------------------- PREDICTION ------------- Prediction --------------------------------------------
     
-    def _Generate_pext(self, l = 0.01, Sj = 2):
-        l = self.l
-        T = self.Spikes_train.shape[1]
-        MazeID_train = self.MazeID_train
-        n = self.Spikes_train.shape[0]
-        nx = self.res
-        N = np.zeros((T,nx*nx), np.float64)
-        print("    Generate N matrix:")
-        for i in tqdm(range(nx*nx)):
-            N[np.where(MazeID_train == i+1)[0],i] = 1
-        self.N = N
-        
-        pext = np.zeros((n,nx*nx),np.float64)
-        print("    Generate p_extent array")
-        Freq = np.dot(self.Spikes_train, N)  # Frequency of Spikes
-        Freq_A = np.nansum(N,axis=0)
-        pext = (Freq + l) / (Freq_A + l*Sj)
-        pext_A = (Freq_A + l) / (np.nansum(Freq_A) + nx*nx*l)
-        log_A = np.log(pext_A)
-        
-        return pext, pext_A
-    
     # Generate tuning curve matrix (pext in previous versions) to equavalently substitute probability matrix.
     def _Generate_TuningCurve(self):
-        print("Generating tuning curve")
+        print("    Generating tuning curve")
         _nbins = self.res**2
         _coords_range = [0, _nbins +0.0001 ]
         n_neuron = self.Spikes_train.shape[0]
@@ -147,6 +130,7 @@ class NaiveBayesDecoder(object):
         pext_A = pext_A / np.nansum(pext_A)
         self.pext = smooth_pext
         self.pext_A = pext_A
+        print("  Tuning curve successfully generated!")
         return smooth_pext, pext_A
     
     # Bayesian estimation with Laplacian smoothing (BELS)
@@ -171,6 +155,7 @@ class NaiveBayesDecoder(object):
         log_A = np.log(pext_A)
   
         # generate P matrix.
+        print("    Generating P matirx...")
         for t in tqdm(range(T_test)):
             spike_idx = np.where(Spikes_test[:,t]==1)[0]
             nonspike_idx = np.where(Spikes_test[:,t]==0)[0]
@@ -216,12 +201,15 @@ class NaiveBayesDecoder(object):
             abd[k] = D[self.MazeID_predicted[k]-1,self.MazeID_test[k]-1] * 8
         
         # average of AbD
-        qMSE = np.nanmean(abd)
+        MAE = np.nanmean(abd)
         MSE = np.nanmean(abd**2)
         std_abd = np.std(abd**2)
         RMSE = np.sqrt(MSE)
+        print(RMSE)
+        self.RMSE = RMSE
+        self.MAE = MAE
 
-        return MSE, std_abd, RMSE, qMSE
+        return MSE, std_abd, RMSE, MAE
     
     def metrics_Accuracy(self):
         print("Accuracy")
@@ -237,6 +225,9 @@ class NaiveBayesDecoder(object):
             for i in range(geHit.shape[0]):
                 if S2FGraph[int(self.MazeID_test[i])] == S2FGraph[int(self.MazeID_predicted[i])]:
                     geHit[i] = 1
+            self.abHit = np.nanmean(abHit)
+            self.geHit = np.nanmean(geHit)
             return np.nanmean(abHit), np.nanmean(geHit)
         
+        self.abHit = np.nanmean(abHit)
         return np.nanmean(abHit)

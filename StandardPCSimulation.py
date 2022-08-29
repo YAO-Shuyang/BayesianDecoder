@@ -2,18 +2,23 @@ from mylib.maze_utils3 import *
 
 class StandardPCSimulation():
     '''
-    version： 1.0
+    version: 1.1
     Author: YAO Shuyang
-    Date: August 29th, 2022
+    Date: August 30th, 2022
+
     What is a standard place cell? We regard place cell that follows theses 3 criteria as a standard (or classical) place cell:
         a.	Has only 1 place field.
         b.	Firing rate distribution strictly obeys Gaussian distribution.
         c.	neuron populations are independently firing at each spatial bins. 
+
+    Log: 
+        The previous version of StandardPCSimulation does not concern that different neuron have different center peak rate.
+        I fix this point by adding a random parameter peak_rate which determines the center rate of each cells, ranging from 0.5 to 1.
         
     '''
 
 
-    def __init__(self, n = 100, sigma = 5, nx = 2304, maze_type = 1):
+    def __init__(self, n = 100, sigma = 5, nx = 2304, maze_type = 1, _version = 1.1):
         '''
         n: int, numbers of neuron to generate.
 
@@ -27,9 +32,10 @@ class StandardPCSimulation():
         self.nx = nx
         self.maze_type = maze_type
         self.is_cease = False
+        self.version = 'StandardPCSimulation v '+str(_version)
 
     def _ReadInDMatrix(self):
-        with open(r'G:\YSY\maze_learning\decoder_DMatrix.pkl', 'rb') as handle:
+        with open('decoder_DMatrix.pkl', 'rb') as handle:
             D_Matrice = pickle.load(handle)
         if self.nx == 12**2:
             D = D_Matrice[6 + self.maze_type] #/ self.nx * 12
@@ -53,20 +59,26 @@ class StandardPCSimulation():
         #       and the value represents the field center.
         # FieldSize: ndarray with shape of (n,). We determines field size by the value of sigma. The bigger sigma is, the larger field
         #       size is.
+        # PeakRate: ndarray with shape of (n,). New added parameter in version 1.1 and later versions. Random value ranges from 0.5 
+        #       to 1.
         PM = np.zeros((self.n, self.nx), dtype = np.float64)
         FieldCenter = np.random.randint(low = 1, high = self.nx+1, dtype = np.int64, size = self.n)
         FieldSize = (np.random.random(size = self.n)+1)*self.sigma
+        PeakRate = np.random.random(size = self.n) / 5 + 0.6
 
         # Generate D_Mtrix: ndarray with size (nx,nx) which contains distance value between any 2 bins.
         D = self._ReadInDMatrix()
 
         # To initiate PM.
-        for k in range(self.n):
+        for k in tqdm(range(self.n)):
             for j in range(self.nx):
                 x = D[FieldCenter[k]-1,j]
-                PM[k,j] = self._Gaussian(x, sigma = FieldSize[k])
-        PM = sklearn.preprocessing.normalize(PM, norm = 'l1')
+                PM[k,j] = self._Gaussian(x, sigma = FieldSize[k], peak_rate = PeakRate[k])
+        # PM = sklearn.preprocessing.normalize(PM, norm = 'l1')
         
+        self.FieldCenter = FieldCenter
+        self.FieldSize = FieldSize
+        self.PeakRate = PeakRate
         self.PM = PM
         return PM
 
@@ -76,18 +88,18 @@ class StandardPCSimulation():
         '''
         MazeID_sequence = np.random.randint(low = 1, high = self.nx+1, dtype = np.int64, size = T)
         Spikes_sequence = np.zeros((self.n, T), dtype = np.float64)
-        print("    Generate PM...")
+        print("     Generate possibility matrix...")
         PM = self._PossibilityMatrix()
-        print("    Generate Spikes...")
+        print("     Generate simulated spike sequence...")
         # To randomly generate a Spikes_sequence according to the possibility matrix PM.
-        for t in range(T):
+        for t in tqdm(range(T)):
             for n in range(self.n):
                 Spikes_sequence[n,t] = np.random.choice([0, 1], p = [1-PM[n,MazeID_sequence[t]-1], PM[n,MazeID_sequence[t]-1]])
 
         self.T = T
         self.MazeID_sequence = MazeID_sequence
         self.Spikes_sequence = Spikes_sequence
-        print("Done.",end='\n\n\n')
+        print("  Simulation finish.")
         
         return MazeID_sequence, Spikes_sequence
 
