@@ -1,29 +1,23 @@
 from mylib.maze_utils3 import *
 
-class StandardPCSimulation():
+class PolyFieldsPCSimulator():
     '''
-    version: 1.2
+    version: 2.0
     Author: YAO Shuyang
     Date: August 30th, 2022
+    ----------------------------------
 
-    What is a standard place cell? We regard place cell that follows theses 3 criteria as a standard (or classical) place cell:
+    What is a standard place cell? I regard place cell that follows these 3 criteria as a standard (or classical) place cell:
         a.	Has only 1 place field.
         b.	Firing rate distribution strictly obeys Gaussian distribution.
         c.	neuron populations are independently firing at each spatial bins. 
-
-    Log(-v1.1): 
-        The previous version of StandardPCSimulation does not concern that different neuron have different center peak rate.
-        I fix this point by adding a random parameter peak_rate which determines the center rate of each cells, ranging from 0.5 to 1.
+    However, the cells we recorded is not always standard. It may has more than 1 field, or the fields is not a standard circle.
+    To futher simulate this kind of place cells, I define PolyFieldsPCSimulation.
     
-    Log(-v1.2):
-        1. The previous version set the sigma value as a constant value. To test the influence to decoding rate when modulating the 
-        sigmavalue, we made some improvement to take the sigma value undercontrol.
-        2. The previous version set the peak rate value as a constant value. To test the influence to decoding rate when modulating 
-        the peak rate value, we made some improvement to take the peak rate value undercontrol.
     '''
 
-
-    def __init__(self, n = 100, sigma_low = 3, sigma_high = 5, peak_high = 0.8, peak_low = 0.6, nx = 2304, maze_type = 1, _version = 1.2):
+    def __init__(self, n = 100, sigma_low = 3, sigma_high = 5, peak_high = 0.8, peak_low = 0.6, 
+                    nx = 2304, maze_type = 1, _version = 2.0, possibility = []):
         '''
         n: int, numbers of neuron to generate.
 
@@ -31,6 +25,10 @@ class StandardPCSimulation():
 
         sigma(_low, _high): float, Gaussian parameter, determines the field size of place cell.
                 the value is randomly generated from range [sigma_low,sigma_high)
+
+        peak(_high,low): float, ranging from [0,1), the firing possibility of main field center locates in this area.
+
+        possibility: field number possiblity. for randomly select cells
         '''
         self.n = n
         self.sigma_low = sigma_low
@@ -40,7 +38,8 @@ class StandardPCSimulation():
         self.is_cease = False
         self.peak_high = peak_high
         self.peak_low = peak_low
-        self.version = 'StandardPCSimulation v '+str(_version)
+        self.p = possibility
+        self.version = 'PolyFieldsPCSimulation v '+str(_version)
 
     def _ReadInDMatrix(self):
         with open('decoder_DMatrix.pkl', 'rb') as handle:
@@ -49,7 +48,7 @@ class StandardPCSimulation():
             D = D_Matrice[6 + self.maze_type] #/ self.nx * 12
         elif self.nx == 24**2:
             D = D_Matrice[3 + self.maze_type] #/ self.nx * 12
-        elif self.nx == 2304:
+        elif self.nx == 48**2:
             D = D_Matrice[self.maze_type] #/ self.nx * 12
         else:
             self.is_cease = True
@@ -70,23 +69,43 @@ class StandardPCSimulation():
         # PeakRate: ndarray with shape of (n,). New added parameter in version 1.1 and later versions. Random value ranges from 0.5 
         #       to 1.
         PM = np.zeros((self.n, self.nx), dtype = np.float64)
-        FieldCenter = np.random.randint(low = 1, high = self.nx+1, dtype = np.int64, size = self.n)
-        FieldSize = np.random.random(size = self.n) * (self.sigma_high-self.sigma_low) + self.sigma_low
-        PeakRate = np.random.random(size = self.n) * (self.peak_high-self.peak_low) + self.peak_low
+        MAX_FIELDNUMBER = len(self.p)
+        FieldCenter = np.random.randint(low = 1, high = self.nx+1, dtype = np.int64, size = (self.n,MAX_FIELDNUMBER))
+        FieldSize = np.random.random(size = (self.n, MAX_FIELDNUMBER)) * (self.sigma_high-self.sigma_low) + self.sigma_low
+        FieldNumber = np.random.choice(a = np.array(range(1,MAX_FIELDNUMBER+1)), size = self.n, p = self.p, replace = True)
+        
+        # Generate field center
+        for i in range(self.n):
+            for j in range(FieldNumber[i],MAX_FIELDNUMBER):
+                FieldCenter[i,j] =  0
+                FieldSize[i,j] = 0
+
+        # Generate field center rate:
+        CenterRate = np.zeros_like(FieldCenter, dtype = np.float64)
+        CenterRate[:,0] = np.random.random(size = self.n) * (self.peak_high-self.peak_low) + self.peak_low
+        for i in range(self.n):
+            CenterRate[i,1:FieldNumber[i]] = np.random.random(size = FieldNumber[i]-1) * 0.5 * CenterRate[i,0] + 0.5 * CenterRate[i,0]     
 
         # Generate D_Mtrix: ndarray with size (nx,nx) which contains distance value between any 2 bins.
         D = self._ReadInDMatrix()
 
         # To initiate PM.
+        
         for k in tqdm(range(self.n)):
             for j in range(self.nx):
-                x = D[FieldCenter[k]-1,j]
-                PM[k,j] = self._Gaussian(x, sigma = FieldSize[k], peak_rate = PeakRate[k])
+                for n in range(FieldNumber[k]):
+                    x = D[FieldCenter[k,n]-1,j]
+                    PM[k,j] += self._Gaussian(x, sigma = FieldSize[k,n], peak_rate = CenterRate[k,n])
         # PM = sklearn.preprocessing.normalize(PM, norm = 'l1')
-        
+        # to make sure the element in PM will never be bigger than 1.
+        for k in range(self.n):
+            PM[k,:] = PM[k,:] / np.max(PM[k,:]) * CenterRate[k,0]
+
         self.FieldCenter = FieldCenter
         self.FieldSize = FieldSize
-        self.PeakRate = PeakRate
+        self.PeakRate = CenterRate
+        self.FieldNumber = FieldNumber
+        self.MAX_FIELDNUMBER = MAX_FIELDNUMBER
         self.PM = PM
         return PM
 
@@ -98,6 +117,7 @@ class StandardPCSimulation():
         Spikes_sequence = np.zeros((self.n, T), dtype = np.float64)
         print("     Generate possibility matrix...")
         PM = self._PossibilityMatrix()
+
         print("     Generate simulated spike sequence...")
         # To randomly generate a Spikes_sequence according to the possibility matrix PM.
         for t in tqdm(range(T)):
@@ -110,30 +130,4 @@ class StandardPCSimulation():
         print("  Simulation finish.")
         
         return MazeID_sequence, Spikes_sequence
-
-'''
-PCPopulation = PCSimulation(n = 1000, maze_type = 0)
-spike_nodes, Spikes = PCPopulation.Generate_TrainingSet(T = 20000)
-
-with open('PCSimulation.pkl','wb') as f:
-    pickle.dump(PCPopulation,f)
-
-def Gaussian(x, sigma = 3, peak_rate = 0.8):
-    x = x
-    return peak_rate * np.exp(- x**2 / (sigma**2 * 2))
-
-import matplotlib.pyplot as plt
-x = np.linspace(0,68,68001)
-y = Gaussian(x)
-im = plt.imshow(np.reshape(PCPopulation.PM[0],[48,48]))
-plt.colorbar(im)
-plt.show()
-'''
-
-    
-
-
-
-
-
 

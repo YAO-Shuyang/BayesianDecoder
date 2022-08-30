@@ -2,23 +2,28 @@ from mylib.maze_utils3 import *
 
 class NaiveBayesDecoder(object):
     '''
-    version: 1.1
+    version: 1.
     Author: YAO Shuyang
     Date: August 30th, 2022
-
+    -------------------------------------
+    
     A naive Bayesian decoder based on new priciples which aims at decoding neural signals.
     This decoder is written for improving the decoding correction rate for some neural recording in specific environment, like maze.
     This decoder can be run significantly faster than KordingLab's and has a reletively equivalent outcome.
 
-    Log:
+    Log(-v1.1):
         1. Delete self._Generate_pext() and Modify self._Generate_TuningCurve(). I compared the results of self._Generate_pext() and 
         self._Generate_TuningCurve() and find the former is really a redundancy.
+
+    Log(-v1.2):
+        1. Revert D matrix to its prototype (Correspond to 0-1 function). For convience, we compare the True Naive Bayesian method with
+        self-defined(modified) naive Bayesian method and set a parameter to simply perform a switch between them.
     '''
 
-    def __init__(self, maze_type = 1, res=12, l = 0.01, _version = 1.1):
+    def __init__(self, maze_type = 1, res=12, l = 0.01, _version = 1.2, Loss_function = '0-1'):
         '''
         This decoder is compatible with open field and different maze type. Some parameters is set to modulate the decoding efficiency.
-        ---------
+        -----------------------------
         Parameters:
         
         maze type: int, different maze type
@@ -26,12 +31,18 @@ class NaiveBayesDecoder(object):
         res: int, the size of spatial bin. Default = 12, which is equal to a bin size of 8 cm.
 
         l: int, Laplacian parameter, to smooth spike sequence.
+
+        _version: float, set the decoder version information
+
+        Loss_function: str, only has 3 valid value - 'd', 'd2', '0-1'
         '''
+
         self.res=res
         self.is_cease = False
         self.maze_type = maze_type
         self.l = l
         self.version = 'NaiveBayesDecoder v '+str(_version)
+        self.Loss_function = Loss_function
         return
     
     # broadth first search (BFS) to calculating the distance of 2 maze bin
@@ -57,8 +68,25 @@ class NaiveBayesDecoder(object):
             D2 = D**2
         self.D2 = D2
         self.D = D
+
+        # D 0-1 function
+        D01 = np.ones((self.res**2,self.res**2), dtype = np.float64)
+        for i in range(self.res**2):
+            D01[i-1,i-1] = 0
+
+        if self.Loss_function == '0-1':
+            self.d = D01
+        elif self.Loss_function == 'd':
+            self.d = D
+        elif self.Loss_function == 'd2':
+            self.d = D2
+        else:
+            return("Loss function type Error! Only '0-1','d','d2' are valid value. Report by self._Generate_D_Matrix()")
+            self.is_cease = True
+            return
+
         print("    D matrix successfully generated!")
-        return D2
+        return self.d
 
     # ----------------------------------- FITTING ------------------ Fitting ----------------------------------------------
     
@@ -73,7 +101,7 @@ class NaiveBayesDecoder(object):
         nx = self.res             # maze length
 
         # generate distance matrix;
-        D2 = self._Generate_D_Matrix()
+        d = self._Generate_D_Matrix()
         self.Spikes_train = Spikes_train
         self.MazeID_train = MazeID_train
         
@@ -172,7 +200,7 @@ class NaiveBayesDecoder(object):
 
         #Get values saved in "fit" function
         P = self._BayesianEstimation(Spikes_test = Spikes_test, l = self.l, Sj = 2)
-        D = self.D2
+        D = self.d
         self.Spikes_test = Spikes_test
         self.MazeID_test = MazeID_test
 
