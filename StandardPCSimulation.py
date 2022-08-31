@@ -2,9 +2,9 @@ from mylib.maze_utils3 import *
 
 class StandardPCSimulation():
     '''
-    version: 1.2
+    version: 1.3
     Author: YAO Shuyang
-    Date: August 30th, 2022
+    Date: August 31th, 2022
 
     What is a standard place cell? We regard place cell that follows theses 3 criteria as a standard (or classical) place cell:
         a.	Has only 1 place field.
@@ -20,10 +20,13 @@ class StandardPCSimulation():
         sigmavalue, we made some improvement to take the sigma value undercontrol.
         2. The previous version set the peak rate value as a constant value. To test the influence to decoding rate when modulating 
         the peak rate value, we made some improvement to take the peak rate value undercontrol.
+
+    Log(-v1.3):
+        1. Provide a new funciton to generate rate maps from the simulated spike sequence.
     '''
 
 
-    def __init__(self, n = 100, sigma_low = 3, sigma_high = 5, peak_high = 0.8, peak_low = 0.6, nx = 2304, maze_type = 1, _version = 1.2):
+    def __init__(self, n = 100, sigma_low = 3, sigma_high = 5, peak_high = 0.8, peak_low = 0.6, nx = 2304, maze_type = 1, _version = 1.3):
         '''
         n: int, numbers of neuron to generate.
 
@@ -110,6 +113,38 @@ class StandardPCSimulation():
         print("  Simulation finish.")
         
         return MazeID_sequence, Spikes_sequence
+
+    def Simulate_RateMap(self):
+        _nbins = self.nx
+        _coords_range = [0, _nbins +0.0001 ]
+        n_neuron = self.Spikes_train.shape[0]
+        
+        spike_freq_all = np.zeros([n_neuron,_nbins], dtype = np.float64)
+        count_freq = np.zeros(_nbins, dtype = np.float64)
+        for i in range(n_neuron):
+            spike_freq_all[i,] ,_ ,_= scipy.stats.binned_statistic(
+                self.MazeID_sequence,
+                self.Spikes_sequence[i,:],
+                bins=_nbins,
+                statistic="sum",
+                range=_coords_range)
+            
+        count_freq ,_ ,_= scipy.stats.binned_statistic(
+                self.MazeID_sequence,
+                self.Spikes_sequence[i,:],
+                bins=_nbins,
+                statistic="count",
+                range=_coords_range)
+
+        rate_map_simulated = spike_freq_all / count_freq * 30
+        clear_map_simulated = clear_NAN(rate_map_simulated)[0]
+        ms = SmoothMatrix(maze_type = self.maze_type, sigma = 2, _range = 7, nx = int(np.sqrt(self.nx)))
+        smooth_map_simulated = np.dot(clear_map_simulated,ms)
+
+        self.rate_map_simulated = rate_map_simulated
+        self.clear_map_simulated = clear_map_simulated
+        self.smooth_map_simulated = smooth_map_simulated
+        print("    Rate map has been generated from simulated spike sequence.")
 
 '''
 PCPopulation = PCSimulation(n = 1000, maze_type = 0)
