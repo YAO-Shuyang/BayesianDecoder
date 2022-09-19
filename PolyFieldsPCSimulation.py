@@ -4,7 +4,7 @@ class PolyFieldsPCSimulator():
     '''
     version: 2.1
     Author: YAO Shuyang
-    Date: August 31st, 2022 to September 1st, 2022
+    Date: August 31st, 2022 to September 19th, 2022
     ----------------------------------
 
     What is a standard place cell? I regard place cell that follows these 3 criteria as a standard (or classical) place cell:
@@ -170,8 +170,8 @@ class PolyFieldsPCSimulator():
         for t in tqdm(range(T)):
             for n in range(self.n):
                 # pv = self._linear_velocity(V[t])
-                pv = self._piecewise_velocity(V[t])
-                # pv = 1
+                # pv = self._piecewise_velocity(V[t])
+                pv = 1
                 Spikes_sequence[n,t] = np.random.choice([0, 1], p = [1-PM[n,MazeID_sequence[t]-1]*pv, PM[n,MazeID_sequence[t]-1]*pv])
 
         
@@ -205,7 +205,7 @@ class PolyFieldsPCSimulator():
 
         rate_map_simulated = spike_freq_all / count_freq * 30
         clear_map_simulated = clear_NAN(rate_map_simulated)[0]
-        ms = SmoothMatrix(maze_type = self.maze_type, sigma = 2, _range = 7, nx = int(np.sqrt(self.nx)))
+        ms = SmoothMatrix(maze_type = self.maze_type, sigma = 2, _range = 7, nx = int(np.sqrt(self.nx))).T
         smooth_map_simulated = np.dot(clear_map_simulated,ms)
 
         self.rate_map_simulated = rate_map_simulated
