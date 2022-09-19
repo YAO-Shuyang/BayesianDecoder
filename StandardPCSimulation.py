@@ -4,7 +4,7 @@ class StandardPCSimulation():
     '''
     version: 1.3
     Author: YAO Shuyang
-    Date: August 31th, 2022
+    Date: August 31th, 2022 to September 19th, 2022
 
     What is a standard place cell? We regard place cell that follows theses 3 criteria as a standard (or classical) place cell:
         a.	Has only 1 place field.
@@ -117,7 +117,7 @@ class StandardPCSimulation():
     def Simulate_RateMap(self):
         _nbins = self.nx
         _coords_range = [0, _nbins +0.0001 ]
-        n_neuron = self.Spikes_train.shape[0]
+        n_neuron = self.Spikes_sequence.shape[0]
         
         spike_freq_all = np.zeros([n_neuron,_nbins], dtype = np.float64)
         count_freq = np.zeros(_nbins, dtype = np.float64)
