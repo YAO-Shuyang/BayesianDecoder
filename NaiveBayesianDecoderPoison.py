@@ -2,7 +2,7 @@ from mylib.maze_utils3 import *
 
 class NaiveBayesDecoderPoison(object):
     '''
-    version: 2.0
+    version: 2.1
     Author: YAO Shuyang
     Date: September 20th, 2022
     -------------------------------------
@@ -11,9 +11,12 @@ class NaiveBayesDecoderPoison(object):
     This decoder is written for improving the decoding accuracy and declining the MSE (Mean Square Error) for neural recordings in specific environment, 
     like maze. We perform time-window based method while version 1.0~1.3 are a special condition of decoder-v-2.0.
 
+    Log(v2.1):
+        1. perform a Gaussian smooth for pext across space.
+
     '''
 
-    def __init__(self, maze_type = 1, res=12, l = 0.01, _version = 2.0, Loss_function = '0-1', is_smooth = True, time_window = 30):
+    def __init__(self, maze_type = 1, res=12, l = 0.01, _version = 2.1, Loss_function = '0-1', is_smooth = True, time_window = 30):
         '''
         This decoder is compatible with open field and different maze type. Some parameters is set to modulate the decoding efficiency.
         -----------------------------
@@ -114,6 +117,7 @@ class NaiveBayesDecoderPoison(object):
         n_neuron = self.Spikes_train.shape[0]
         Spikes_train = self.Spikes_train
         MazeID_train = self.MazeID_train
+        maze_type= self.maze_type
         tao = int(self.tao)
         T = Spikes_train.shape[1]
         
@@ -131,6 +135,24 @@ class NaiveBayesDecoderPoison(object):
 
         pext = np.zeros((n_neuron,_nbins,tao), dtype = np.float64)
 
+        if self.is_smooth == True:
+            with open('decoder_SmoothMatrix.pkl','rb') as handle:
+                ms_set = pickle.load(handle)
+        
+            if self.res == 12:
+                ms = ms_set[maze_type + 6]
+            elif self.res == 24:
+                ms = ms_set[maze_type + 3]
+            elif self.res == 48:
+                ms = ms_set[maze_type]
+        
+            self.smooth_matrix = ms
+            smooth_pext = np.zeros_like(pext, dtype = np.float64)
+            for i in range(self.tao):
+                smooth_pext[:,:,i] = np.dot(pext[:,:,i], ms)
+        else:
+            smooth_pext = pext
+
         for t in range(T-tao+2):
             dis = np.nansum(Spikes_train[:, t: t+tao-1], axis = 1)
             for n in range(n_neuron):
@@ -138,12 +160,12 @@ class NaiveBayesDecoderPoison(object):
 
         for n in range(n_neuron):
             for i in range(_nbins):
-                pext[n,i,:] = (pext[n,i,:] + self.l) / np.nansum(pext[n,i,:] + self.l)
-        self.pext = pext
+                smooth_pext[n,i,:] = (smooth_pext[n,i,:] + self.l) / np.nansum(smooth_pext[n,i,:] + self.l)
+        self.pext = smooth_pext
         self.pext_A = pext_A
         
         print("    Tuning curve successfully generated!")
-        return pext, pext_A
+        return smooth_pext, pext_A
     
     # Bayesian estimation with Laplacian smoothing (BELS)
     def _BayesianEstimation(self, Spikes_test, l = 1, Sj = 2):
